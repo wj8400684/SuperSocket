@@ -19,6 +19,7 @@ using Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using SuperSocket.Kestrel;
+using SuperSocket.Kestrel.Connection;
 using SuperSocket.WebSocket;
 
 namespace SuperSocket.Tests
