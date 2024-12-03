@@ -26,20 +26,21 @@ namespace SuperSocket.Client
         {
             _packageEncoder = packageEncoder;
         }
-        
-        public EasyClient(IPipelineFilter<TPackage> pipelineFilter, IPackageEncoder<TSendPackage> packageEncoder, ILogger logger = null)
+
+        public EasyClient(IPipelineFilter<TPackage> pipelineFilter, IPackageEncoder<TSendPackage> packageEncoder,
+            ILogger logger = null)
             : this(pipelineFilter, packageEncoder, new ConnectionOptions { Logger = logger })
         {
-
         }
 
-        public EasyClient(IPipelineFilter<TPackage> pipelineFilter, IPackageEncoder<TSendPackage> packageEncoder, ConnectionOptions options)
+        public EasyClient(IPipelineFilter<TPackage> pipelineFilter, IPackageEncoder<TSendPackage> packageEncoder,
+            ConnectionOptions options)
             : base(pipelineFilter, options)
         {
             _packageEncoder = packageEncoder;
         }
 
-        public virtual async ValueTask SendAsync(TSendPackage package)
+        public virtual async ValueTask SendAsync(TSendPackage package, CancellationToken cancellationToken = default)
         {
             await SendAsync(_packageEncoder, package);
         }
@@ -75,19 +76,16 @@ namespace SuperSocket.Client
 
         protected EasyClient()
         {
-
         }
 
         public EasyClient(IPipelineFilter<TReceivePackage> pipelineFilter)
             : this(pipelineFilter, NullLogger.Instance)
         {
-            
         }
 
         public EasyClient(IPipelineFilter<TReceivePackage> pipelineFilter, ILogger logger)
             : this(pipelineFilter, new ConnectionOptions { Logger = logger })
         {
-
         }
 
         public EasyClient(IPipelineFilter<TReceivePackage> pipelineFilter, ConnectionOptions options)
@@ -133,7 +131,7 @@ namespace SuperSocket.Client
             {
                 connectors.Add(new GZipConnector(CompressionLevel));
             }
-            
+
             return BuildConnectors(connectors);
         }
 
@@ -150,16 +148,18 @@ namespace SuperSocket.Client
 
                 prevConnector = connector as ConnectorBase;
             }
-            
+
             return connectors.First();
         }
 
-        ValueTask<bool> IEasyClient<TReceivePackage>.ConnectAsync(EndPoint remoteEndPoint, CancellationToken cancellationToken)
+        ValueTask<bool> IEasyClient<TReceivePackage>.ConnectAsync(EndPoint remoteEndPoint,
+            CancellationToken cancellationToken)
         {
             return ConnectAsync(remoteEndPoint, cancellationToken);
         }
 
-        protected virtual async ValueTask<bool> ConnectAsync(EndPoint remoteEndPoint, CancellationToken cancellationToken)
+        protected virtual async ValueTask<bool> ConnectAsync(EndPoint remoteEndPoint,
+            CancellationToken cancellationToken)
         {
             var connector = GetConnector();
             var state = await connector.ConnectAsync(remoteEndPoint, null, cancellationToken);
@@ -168,7 +168,7 @@ namespace SuperSocket.Client
             {
                 OnError($"The connection to {remoteEndPoint} was cancelled.", state.Exception);
                 return false;
-            }                
+            }
 
             if (!state.Result)
             {
@@ -186,16 +186,20 @@ namespace SuperSocket.Client
         }
 
         public void AsUdp(IPEndPoint remoteEndPoint, ArrayPool<byte> bufferPool = null, int bufferSize = 4096)
-        { 
+        {
             var localEndPoint = LocalEndPoint;
 
             if (localEndPoint == null)
             {
-                localEndPoint = new IPEndPoint(remoteEndPoint.AddressFamily == AddressFamily.InterNetworkV6 ? IPAddress.IPv6Any : IPAddress.Any, 0);
+                localEndPoint =
+                    new IPEndPoint(
+                        remoteEndPoint.AddressFamily == AddressFamily.InterNetworkV6
+                            ? IPAddress.IPv6Any
+                            : IPAddress.Any, 0);
             }
 
             var socket = new Socket(remoteEndPoint.AddressFamily, SocketType.Dgram, ProtocolType.Udp);
-            
+
             // bind the local endpoint
             socket.Bind(localEndPoint);
 
@@ -206,7 +210,8 @@ namespace SuperSocket.Client
             UdpReceive(socket, connection, bufferPool, bufferSize);
         }
 
-        private async void UdpReceive(Socket socket, UdpPipeConnection connection, ArrayPool<byte> bufferPool, int bufferSize)
+        private async void UdpReceive(Socket socket, UdpPipeConnection connection, ArrayPool<byte> bufferPool,
+            int bufferSize)
         {
             if (bufferPool == null)
                 bufferPool = ArrayPool<byte>.Shared;
@@ -218,10 +223,12 @@ namespace SuperSocket.Client
                 try
                 {
                     var result = await socket
-                        .ReceiveFromAsync(new ArraySegment<byte>(buffer, 0, buffer.Length), SocketFlags.None, connection.RemoteEndPoint)
+                        .ReceiveFromAsync(new ArraySegment<byte>(buffer, 0, buffer.Length), SocketFlags.None,
+                            connection.RemoteEndPoint)
                         .ConfigureAwait(false);
 
-                    await connection.WritePipeDataAsync((new ArraySegment<byte>(buffer, 0, result.ReceivedBytes)).AsMemory(), CancellationToken.None);
+                    await connection.WritePipeDataAsync(
+                        (new ArraySegment<byte>(buffer, 0, result.ReceivedBytes)).AsMemory(), CancellationToken.None);
                 }
                 catch (NullReferenceException)
                 {
@@ -295,6 +302,8 @@ namespace SuperSocket.Client
         protected virtual async ValueTask OnPackageReceived(TReceivePackage package)
         {
             var handler = PackageHandler;
+            if (handler == null)
+                return;
 
             try
             {
@@ -335,24 +344,27 @@ namespace SuperSocket.Client
             Logger?.LogError(message);
         }
 
-        ValueTask IEasyClient<TReceivePackage>.SendAsync(ReadOnlyMemory<byte> data)
+        ValueTask IEasyClient<TReceivePackage>.SendAsync(ReadOnlyMemory<byte> data, CancellationToken cancellationToken)
         {
-            return SendAsync(data);
+            return SendAsync(data, cancellationToken);
         }
 
-        protected virtual async ValueTask SendAsync(ReadOnlyMemory<byte> data)
+        protected virtual async ValueTask SendAsync(ReadOnlyMemory<byte> data,
+            CancellationToken cancellationToken = default)
         {
-            await Connection.SendAsync(data);
+            await Connection.SendAsync(data, cancellationToken);
         }
 
-        ValueTask IEasyClient<TReceivePackage>.SendAsync<TSendPackage>(IPackageEncoder<TSendPackage> packageEncoder, TSendPackage package)
+        ValueTask IEasyClient<TReceivePackage>.SendAsync<TSendPackage>(IPackageEncoder<TSendPackage> packageEncoder,
+            TSendPackage package, CancellationToken cancellationToken)
         {
-            return SendAsync<TSendPackage>(packageEncoder, package);
+            return SendAsync<TSendPackage>(packageEncoder, package, cancellationToken);
         }
 
-        protected virtual async ValueTask SendAsync<TSendPackage>(IPackageEncoder<TSendPackage> packageEncoder, TSendPackage package)
+        protected virtual async ValueTask SendAsync<TSendPackage>(IPackageEncoder<TSendPackage> packageEncoder,
+            TSendPackage package, CancellationToken cancellationToken = default)
         {
-            await Connection.SendAsync(packageEncoder, package);
+            await Connection.SendAsync(packageEncoder, package, cancellationToken);
         }
 
         public event EventHandler Closed;

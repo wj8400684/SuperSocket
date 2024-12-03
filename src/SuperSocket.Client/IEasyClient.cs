@@ -9,10 +9,10 @@ namespace SuperSocket.Client
     public interface IEasyClient<TReceivePackage, TSendPackage> : IEasyClient<TReceivePackage>
         where TReceivePackage : class
     {
-        ValueTask SendAsync(TSendPackage package);      
+        ValueTask SendAsync(TSendPackage package, CancellationToken cancellationToken = default);
     }
 
-    
+
     public interface IEasyClient<TReceivePackage>
         where TReceivePackage : class
     {
@@ -28,9 +28,10 @@ namespace SuperSocket.Client
 
         void StartReceive();
 
-        ValueTask SendAsync(ReadOnlyMemory<byte> data);
+        ValueTask SendAsync(ReadOnlyMemory<byte> data, CancellationToken cancellationToken = default);
 
-        ValueTask SendAsync<TSendPackage>(IPackageEncoder<TSendPackage> packageEncoder, TSendPackage package);
+        ValueTask SendAsync<TSendPackage>(IPackageEncoder<TSendPackage> packageEncoder, TSendPackage package,
+            CancellationToken cancellationToken = default);
 
         event EventHandler Closed;
 
