@@ -3,102 +3,70 @@ using System.Net;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using SuperSocket.Client.Proxy.Request;
 using SuperSocket.Connection;
 using SuperSocket.ProtoBase;
 
 namespace SuperSocket.Client.Proxy
 {
-    public class HttpConnector : ProxyConnectorBase
+    public sealed class HttpConnector : ProxyConnectorBase
     {
-        private const string _requestTemplate = "CONNECT {0}:{1} HTTP/1.1\r\nHost: {0}:{1}\r\nProxy-Connection: Keep-Alive\r\n";
-        private const string _responsePrefix = "HTTP/1.";
-        private const char _space = ' ';
-        private string _username;
-        private string _password;
+        private readonly string _username;
+        private readonly string _password;
+
+        private const string ResponsePrefix = "HTTP/1.";
+        private const char Space = ' ';
 
         public HttpConnector(EndPoint proxyEndPoint)
             : base(proxyEndPoint)
         {
-
         }
 
-        public HttpConnector(EndPoint proxyEndPoint, string username, string password)
-            : this(proxyEndPoint)
+        public HttpConnector(EndPoint proxyEndPoint, string username, string password) : base(
+            proxyEndPoint)
         {
             _username = username;
             _password = password;
         }
 
-        protected override async ValueTask<ConnectState> ConnectProxyAsync(EndPoint remoteEndPoint, ConnectState state, CancellationToken cancellationToken)
+        protected override async ValueTask<ConnectState> ConnectProxyAsync(
+            EndPoint remoteEndPoint, 
+            IConnection connection, 
+            ConnectState connectState,
+            CancellationToken cancellationToken)
         {
-            var encoding = Encoding.ASCII;
-            var request = string.Empty;
-            var connection = state.CreateConnection(new ConnectionOptions { ReadAsDemand = true });
+            cancellationToken.ThrowIfCancellationRequested();
 
-            var packStream = connection.GetPackageStream(new LinePipelineFilter(encoding));
+            var packStream = connection.GetPackageStream(new LinePipelineFilter(Encoding.ASCII));
 
-            if (remoteEndPoint is DnsEndPoint dnsEndPoint)
+            var request = new HttpRequest(connection, packStream, remoteEndPoint, _username, _password);
+
+            var p = await request.SendHandshakeAsync();
+
+            if (!HandleResponse(p, out var errorMessage))
             {
-                request = string.Format(_requestTemplate, dnsEndPoint.Host, dnsEndPoint.Port);
-            }
-            else if (remoteEndPoint is IPEndPoint ipEndPoint)
-            {
-                request = string.Format(_requestTemplate, ipEndPoint.Address, ipEndPoint.Port);
+                connectState.Result = false;
+                connectState.Exception = new Exception(errorMessage);
             }
             else
             {
-                return new ConnectState
-                {
-                    Result = false,
-                    Exception = new Exception($"The endpint type {remoteEndPoint.GetType().ToString()} is not supported.")
-                };
+                connectState.Result = true;
             }
-
-            // send request
-            await connection.SendAsync((writer) =>
-            {
-                writer.Write(request, encoding);
-
-                if (!string.IsNullOrEmpty(_username) || !string.IsNullOrEmpty(_password))
-                {
-                    writer.Write("Proxy-Authorization: Basic ", encoding);
-                    writer.Write(Convert.ToBase64String(encoding.GetBytes($"{_username}:{_password}")), encoding);
-                    writer.Write("\r\n\r\n", encoding);
-                }
-                else
-                {
-                    writer.Write("\r\n", encoding);
-                }
-            });
             
-            var p = await packStream.ReceiveAsync();
-
-            if (!HandleResponse(p, out string errorMessage))
-            {
-                await connection.CloseAsync(CloseReason.ProtocolError);
-
-                return new ConnectState
-                {
-                    Result = false,
-                    Exception = new Exception(errorMessage)
-                };
-            }
-
-            await connection.DetachAsync();
-            return state;
+            return connectState;
         }
 
-        private bool HandleResponse(TextPackageInfo p, out string message)
+        private static bool HandleResponse(TextPackageInfo p, out string message)
         {
             message = string.Empty;
 
             if (p == null)
                 return false;
 
-            var pos = p.Text.IndexOf(_space);
+            var pos = p.Text.IndexOf(Space);
 
             // validating response
-            if (!p.Text.StartsWith(_responsePrefix, StringComparison.OrdinalIgnoreCase) || pos <= 0)
+            if (!p.Text.StartsWith(ResponsePrefix, StringComparison.OrdinalIgnoreCase) || pos <= 0)
             {
                 message = "Invalid response";
                 return false;
