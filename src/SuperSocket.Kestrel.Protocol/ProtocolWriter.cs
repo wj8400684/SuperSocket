@@ -29,16 +29,49 @@ public class ProtocolWriter : IAsyncDisposable
         _semaphore = semaphore;
     }
 
-    public async ValueTask WriteAsync<TWriteMessage>(IMessageWriter<TWriteMessage> writer,
-        TWriteMessage protocolMessage, CancellationToken cancellationToken = default)
+    public async ValueTask WriteAsync(ReadOnlyMemory<byte> data, CancellationToken cancellationToken = default)
     {
         var sendLockAcquired = false;
-        
+
         try
         {
             await _semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
             sendLockAcquired = true;
-            
+
+            if (_disposed)
+            {
+                return;
+            }
+
+            var result = await _writer.WriteAsync(data, cancellationToken);
+
+            if (result.IsCanceled)
+            {
+                throw new OperationCanceledException();
+            }
+
+            if (result.IsCompleted)
+            {
+                _disposed = true;
+            }
+        }
+        finally
+        {
+            if (sendLockAcquired)
+                _semaphore.Release();
+        }
+    }
+
+    public async ValueTask WriteAsync<TWriteMessage>(IMessageWriter<TWriteMessage> writer,
+        TWriteMessage protocolMessage, CancellationToken cancellationToken = default)
+    {
+        var sendLockAcquired = false;
+
+        try
+        {
+            await _semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
+            sendLockAcquired = true;
+
             if (_disposed)
             {
                 return;
@@ -74,7 +107,7 @@ public class ProtocolWriter : IAsyncDisposable
         {
             await _semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
             sendLockAcquired = true;
-            
+
             if (_disposed)
             {
                 return;
@@ -113,7 +146,7 @@ public class ProtocolWriter : IAsyncDisposable
         {
             await _semaphore.WaitAsync().ConfigureAwait(false);
             sendLockAcquired = true;
-            
+
             if (_disposed)
             {
                 return;
