@@ -73,7 +73,7 @@ public class WebSocketPipeConnection : PipeConnection
         return totalLength;
     }
 
-    protected override void Close()
+    protected async override void Close()
     {
         var socket = _socket;
         if (socket == null)
@@ -84,7 +84,7 @@ public class WebSocketPipeConnection : PipeConnection
 
         try
         {
-            socket.Abort();
+            await socket.CloseAsync(WebSocketCloseStatus.NormalClosure, string.Empty, CancellationToken.None);
         }
         catch
         {
