@@ -60,7 +60,7 @@ public class ProtocolReader : IAsyncDisposable
         }
 
         // We have a buffer, test to see if there's any message left in the buffer
-        if (TryParseMessage(maximumMessageSize, reader, _buffer, out var protocolMessage))
+        if (_buffer.Length > 0 && TryParseMessage(maximumMessageSize, reader, _buffer, out var protocolMessage))
         {
             _hasMessage = true;
             return new ValueTask<ProtocolReadResult<TReadMessage>>(
@@ -167,7 +167,7 @@ public class ProtocolReader : IAsyncDisposable
             return (false, false);
         }
 
-        if (_buffer.Length > 0 && TryParseMessage(maximumMessageSize, reader, _buffer, out var protocolMessage))
+        if (TryParseMessage(maximumMessageSize, reader, _buffer, out var protocolMessage))
         {
             _hasMessage = true;
             readResult = new ProtocolReadResult<TReadMessage>(protocolMessage, _isCanceled, isCompleted: false);
