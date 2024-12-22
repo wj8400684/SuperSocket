@@ -116,7 +116,7 @@ internal sealed class QuicConnectionListener(
             return;
         }
 
-        await handler.Invoke(this.Options, connection);
+        await handler(this.Options, connection);
     }
 
     public async Task StopAsync()
