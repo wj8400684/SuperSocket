@@ -409,6 +409,7 @@ namespace SuperSocket.Connection
                 if (buffer.Length > 0)
                 {
                     BufferFilterResult<TPackageInfo> lastFilterResult = default;
+                    List<TPackageInfo> packages = null;
 
                     foreach (var bufferFilterResult in ReadBuffer(buffer, pipelineFilter))
                     {
@@ -416,7 +417,10 @@ namespace SuperSocket.Connection
 
                         if (bufferFilterResult.Package != null)
                         {
-                            yield return bufferFilterResult.Package;
+                            if (packages == null)
+                                packages = new List<TPackageInfo>();
+
+                            packages.Add(bufferFilterResult.Package);
                         }
 
                         if (bufferFilterResult.Exception != null)
@@ -439,6 +443,14 @@ namespace SuperSocket.Connection
                     else
                     {
                         reader.AdvanceTo(buffer.Start, buffer.End);
+                    }
+
+                    if (packages != null)
+                    {
+                        foreach (var package in packages)
+                        {
+                            yield return package;
+                        }
                     }
                 }                
 
