@@ -97,7 +97,7 @@ namespace SuperSocket.Connection
             await readTask.ConfigureAwait(false);
             FireClose();
         }
-        
+
         /// <summary>
         /// Runs the connection asynchronously with the specified pipeline filter.
         /// </summary>
@@ -335,7 +335,7 @@ namespace SuperSocket.Connection
         public override async ValueTask SendAsync(Action<PipeWriter> write, CancellationToken cancellationToken)
         {
             CheckConnectionSendAllowed();
-            
+
             var sendLockAcquired = false;
 
             try
@@ -452,7 +452,7 @@ namespace SuperSocket.Connection
                             yield return package;
                         }
                     }
-                }                
+                }
 
                 if (completedOrCancelled)
                 {
@@ -555,11 +555,21 @@ namespace SuperSocket.Connection
 
         /// <summary>
         /// Detaches the connection asynchronously.
+        /// After detaching, the underlying transport pipes remain open and usable
+        /// for raw I/O (e.g. TLS handshake, bidirectional relay).
         /// </summary>
         /// <returns>A task that represents the asynchronous detach operation.</returns>
         public override async ValueTask DetachAsync()
         {
             _isDetaching = true;
+
+            // CancelPendingRead causes ReadAsync to return ReadResult.IsCanceled = true
+            // instead of throwing OperationCanceledException.
+            // This ensures AdvanceTo is called in the normal code path (line ~441/445),
+            // leaving the PipeReader in a clean idle state for subsequent consumers
+            // (e.g. Kestrel's UseHttps / SslStream).
+            InputReader.CancelPendingRead();
+
             await CancelAsync().ConfigureAwait(false);
             await _connectionTask.ConfigureAwait(false);
             _isDetaching = false;
@@ -577,7 +587,7 @@ namespace SuperSocket.Connection
             else
                 Logger?.LogError(message);
         }
-        
+
         /// <summary>
         /// Completes the reader asynchronously.
         /// </summary>
