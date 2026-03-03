@@ -97,7 +97,7 @@ namespace SuperSocket.Connection
             await readTask.ConfigureAwait(false);
             FireClose();
         }
-        
+
         /// <summary>
         /// Runs the connection asynchronously with the specified pipeline filter.
         /// </summary>
@@ -335,7 +335,7 @@ namespace SuperSocket.Connection
         public override async ValueTask SendAsync(Action<PipeWriter> write, CancellationToken cancellationToken)
         {
             CheckConnectionSendAllowed();
-            
+
             var sendLockAcquired = false;
 
             try
@@ -409,6 +409,7 @@ namespace SuperSocket.Connection
                 if (buffer.Length > 0)
                 {
                     BufferFilterResult<TPackageInfo> lastFilterResult = default;
+                    List<TPackageInfo> packages = null;
 
                     foreach (var bufferFilterResult in ReadBuffer(buffer, pipelineFilter))
                     {
@@ -416,7 +417,10 @@ namespace SuperSocket.Connection
 
                         if (bufferFilterResult.Package != null)
                         {
-                            yield return bufferFilterResult.Package;
+                            if (packages == null)
+                                packages = new List<TPackageInfo>();
+
+                            packages.Add(bufferFilterResult.Package);
                         }
 
                         if (bufferFilterResult.Exception != null)
@@ -440,7 +444,15 @@ namespace SuperSocket.Connection
                     {
                         reader.AdvanceTo(buffer.Start, buffer.End);
                     }
-                }                
+
+                    if (packages != null)
+                    {
+                        foreach (var package in packages)
+                        {
+                            yield return package;
+                        }
+                    }
+                }
 
                 if (completedOrCancelled)
                 {
@@ -543,14 +555,36 @@ namespace SuperSocket.Connection
 
         /// <summary>
         /// Detaches the connection asynchronously.
+        /// After detaching, the underlying transport pipes remain open and usable
+        /// for raw I/O (e.g. TLS handshake, bidirectional relay).
         /// </summary>
         /// <returns>A task that represents the asynchronous detach operation.</returns>
         public override async ValueTask DetachAsync()
         {
             _isDetaching = true;
+
+            // CancelPendingRead causes ReadAsync to return ReadResult.IsCanceled = true
+            // instead of throwing OperationCanceledException.
+            // This ensures AdvanceTo is called in the normal code path (line ~441/445),
+            // leaving the PipeReader in a clean idle state for subsequent consumers
+            // (e.g. Kestrel's UseHttps / SslStream).
+            InputReader.CancelPendingRead();
+
             await CancelAsync().ConfigureAwait(false);
             await _connectionTask.ConfigureAwait(false);
             _isDetaching = false;
+
+            // CancelPendingRead sets a one-shot cancel flag on PipeReader.
+            // If ReadPipeAsync was suspended at 'yield return' (no pending ReadAsync),
+            // the flag is NOT consumed and persists for the next ReadAsync caller.
+            // This poisons subsequent consumers (e.g. Kestrel's SslStream TLS handshake).
+            // Drain the flag here with TryRead + AdvanceTo to leave PipeReader clean.
+            if (InputReader.TryRead(out var drainResult))
+            {
+                // Consume nothing, examine everything — preserves any buffered data
+                // (e.g. TLS ClientHello bytes) for the next consumer.
+                InputReader.AdvanceTo(drainResult.Buffer.Start, drainResult.Buffer.End);
+            }
         }
 
         /// <summary>
@@ -565,7 +599,7 @@ namespace SuperSocket.Connection
             else
                 Logger?.LogError(message);
         }
-        
+
         /// <summary>
         /// Completes the reader asynchronously.
         /// </summary>
