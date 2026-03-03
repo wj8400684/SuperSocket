@@ -49,7 +49,7 @@ public class KestrelPipeConnectionDetachTests
             firstPackage = package;
             break;
         }
-        
+
         Assert.Equal("CONNECT host:443 HTTP/1.1", firstPackage.Text);
         await connection.DetachAsync();
 
@@ -64,6 +64,16 @@ public class KestrelPipeConnectionDetachTests
             TimeSpan.FromSeconds(5),
             testCancellationToken);
         Assert.Equal(outboundPayload, outboundText);
+
+        // After DetachAsync, the PipeReader must NOT have a residual cancel flag.
+        // If it did, Kestrel's SslStream would abort on its first ReadAsync.
+        var tryReadOk = context.Transport.Input.TryRead(out var probeResult);
+        if (tryReadOk)
+        {
+            Assert.False(probeResult.IsCanceled,
+                "PipeReader must not have residual IsCanceled after DetachAsync");
+            context.Transport.Input.AdvanceTo(probeResult.Buffer.Start, probeResult.Buffer.End);
+        }
 
         const string inboundPayload = "PING\r\n";
         await WriteStringAsync(inboundPipe.Writer, inboundPayload, testCancellationToken);
