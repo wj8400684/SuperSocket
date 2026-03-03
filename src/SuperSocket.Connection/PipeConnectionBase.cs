@@ -573,6 +573,18 @@ namespace SuperSocket.Connection
             await CancelAsync().ConfigureAwait(false);
             await _connectionTask.ConfigureAwait(false);
             _isDetaching = false;
+
+            // CancelPendingRead sets a one-shot cancel flag on PipeReader.
+            // If ReadPipeAsync was suspended at 'yield return' (no pending ReadAsync),
+            // the flag is NOT consumed and persists for the next ReadAsync caller.
+            // This poisons subsequent consumers (e.g. Kestrel's SslStream TLS handshake).
+            // Drain the flag here with TryRead + AdvanceTo to leave PipeReader clean.
+            if (InputReader.TryRead(out var drainResult))
+            {
+                // Consume nothing, examine everything — preserves any buffered data
+                // (e.g. TLS ClientHello bytes) for the next consumer.
+                InputReader.AdvanceTo(drainResult.Buffer.Start, drainResult.Buffer.End);
+            }
         }
 
         /// <summary>
